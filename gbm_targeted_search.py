@@ -33,9 +33,10 @@ import healpy as hp
 import argparse
 import datetime
 import matplotlib
-matplotlib.use('Agg')
+#matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
+<<<<<<< HEAD
 from rich.progress import Progress, TextColumn, TaskProgressColumn, TimeRemainingColumn
 from astropy.coordinates import SkyCoord, get_sun
 from gdt.core.plot.sky import EquatorialPlot
@@ -45,13 +46,41 @@ from gdt.core.binning.unbinned import bin_by_time
 from gdt.core.background.fitter import BackgroundFitter
 from gdt.core.background.binned import Polynomial
 from gdt.core.background.unbinned import NaivePoisson
+=======
+import gts
+import utils
+import plots
+
+from skymap import O3_DGAUSS_Model, LigoHealPix
+import healpy as hp
+from astropy.coordinates import SkyCoord
+
+from gdt.core.plot.sky import EquatorialPlot, get_lonlat
+from gdt.core.plot.lib import sky_point
+from gdt.core.healpix import HealPixEffectiveArea
+>>>>>>> 1b1c2d1 (Good Settings to plot injection sky localization and other plots)
 from gdt.missions.fermi.time import Time
 from gdt.missions.fermi.gbm.saa import GbmSaa
 from gdt.missions.fermi.gbm.tte import GbmTte, GbmPhaii
 from gdt.missions.fermi.gbm.poshist import GbmPosHist
 from gdt.missions.fermi.gbm.detectors import GbmDetectors
 from gdt.missions.fermi.gbm.localization import GbmHealPix
+<<<<<<< HEAD
 from gdt.missions.fermi.gbm.finders import ContinuousFinder, TriggerFinder
+=======
+from gdt.missions.fermi.gbm.detectors import GbmDetectors
+from gdt.core.tte import PhotonList
+from gdt.core.spectra.functions import Band
+from gdt.core.simulate.profiles import norris
+from gdt.core.simulate.tte import TteSourceSimulator
+from gdt.core.data_primitives import ResponseMatrix
+from gdt.core.phaii import Phaii 
+from gdt.core.response import Rsp
+from gdt.core.response import Rsp2
+from gdt.core.binning.binned import combine_by_factor, divide_by_factor
+from gdt.core.binning.unbinned import bin_by_time
+from gdt.core.plot.lightcurve import Lightcurve
+>>>>>>> 1b1c2d1 (Good Settings to plot injection sky localization and other plots)
 
 from data import FitStatus
 from utils import SkyGrid, update_tte_trigtime, grid_to_healpix
@@ -84,8 +113,6 @@ def GetData(trigger_id, settings, data_directory, protocol='HTTPS'):
 
     # boolean for specifying requested data type (triggered or continuous)
     triggered = isinstance(trigger_id, str)
-    print(trigger_id, triggered, type(trigger_id), trigger_id.fermi)
-
     # format file paths
     sub_dir = trigger_id if triggered else "%.3f" % trigger_id.fermi
     path = f"{data_directory}/{sub_dir}"
@@ -247,6 +274,7 @@ def main():
     progress.start()
     task = progress.add_task("  Opening TTE", total=len(gbm_config['detectors']))
 
+
     tte_data = []
     for i, det_config in enumerate(gbm_config['detectors'].values()):
         tte = update_tte_trigtime(GbmTte.open(tte_files[i]), trigtime.fermi)
@@ -268,10 +296,12 @@ def main():
                            os.path.join(basedir, 'templates/GBM'),
                            spacecraft_frames, trigtime.fermi, templates=[0, 1, 2])
 
+
     print("  Binning TTE")
     phaiis = DataCollection.from_list(
          ttes.to_phaii(bin_by_time, search_config['time_resolution'], time_ref=0, time_range=search_config['data_range']),
          names=gbm_config['detector_names'])
+
 
     print("  Fitting background")
     backfitters = None
@@ -332,8 +362,6 @@ def main():
     )
     results.append_fields('in_gti', np.ones(results.size, dtype=int))
 
-    print(search['response'])
-    print(np.shape(search['response']))
     # filter results to produce up to 3 top candidates
     filtered_results = results.filter(remove_pe)
     filtered_results = filtered_results.filter(downselect, threshold=search_config['min_loglr'], no_empty=True)
@@ -406,6 +434,7 @@ def main():
             {'filename': os.path.join(args.results_dir, f"Event{i}_Summed_Left_NaI_Chan3-4.png"), 'detectors': nai[6:], 'channel_range': (3, 4)},
             {'filename': os.path.join(args.results_dir, f"Event{i}_Summed_All_BGO_Chan0-3.png"), 'detectors': bgo, 'channel_range': (0, 3)}]]
 
+<<<<<<< HEAD
         [(lcplotter.plot_channels(duration, time_range=time_range, event_time=tstart, **kwargs), progress.update(task, advance=1))
          for kwargs in [
             {'filename': os.path.join(args.results_dir, f"Event{i}_Channel_All_NaI_Chan0-7.png"), 'detectors': nai, 'channels': [0, 1, 2, 3, 4, 5, 6, 7]},
@@ -431,6 +460,23 @@ def main():
         skyplot = EquatorialPlot()
         skyplot.add_localization(loc, clevels=[0.90, 0.50], gradient=False)
         plt.savefig(f"Event{i+1}_skymap.png", dpi=300)
+=======
+        # localization
+        systematic = (O3_DGAUSS_Model, atmoscat, zen) 
+        loc = gts.createLocalization(t, duration, template, search, GbmHealPix, systematic, remove_earth=False)
+        loc.write(args.results_dir, filename='Event{}_healpix.fit'.format(i+1), overwrite=True)
+        skyGrid = utils.SkyGrid(5)
+        #true_loc = HealPixEffectiveArea.effective_area(az = skyGrid._points[0,0], zen = skyGrid._points[1,0])
+        skyplot = EquatorialPlot()
+        skyplot.add_localization(loc, clevels=[0.90, 0.50], gradient=False)
+        inj_ra = skyGrid._points[0,1000]
+        inj_dec = skyGrid._points[1,1000]
+        inj_coord = SkyCoord(inj_ra, np.pi/2 - inj_dec, 
+                             frame=spacecraft_frames.at(trigtime), unit='rad').transform_to(skyplot._astropy_frame)
+        sky_point(inj_coord.ra.deg, inj_coord.dec.deg, skyplot.ax, frame="equatorial", marker="*", c="g",label="Injection sky localization")
+        plt.legend()
+        plt.savefig('Event{}_skymap.png'.format(i+1), dpi=300)
+>>>>>>> 1b1c2d1 (Good Settings to plot injection sky localization and other plots)
         plt.clf()
 
         # combined localization
