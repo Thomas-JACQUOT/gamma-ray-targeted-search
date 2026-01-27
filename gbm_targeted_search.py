@@ -56,6 +56,7 @@ from gdt.missions.fermi.gbm.localization import GbmHealPix
 from gdt.missions.fermi.gbm.finders import ContinuousFinder, TriggerFinder
 
 
+
 from data import FitStatus
 from utils import SkyGrid, update_tte_trigtime, grid_to_healpix
 from plots import TargetedLightcurves, Waterfall, plot_orbit
@@ -67,6 +68,7 @@ from response import GbmResponse
 from configuration import InstrumentConfiguration, SearchConfiguration
 
 basedir = os.path.dirname(os.path.abspath(__file__))
+
 
 
 def GetData(trigger_id, settings, data_directory, protocol='HTTPS'):
@@ -264,7 +266,6 @@ def main():
     poshist = GbmPosHist.open(poshist_file)
     spacecraft_frames = poshist.get_spacecraft_frame()
 
-
     print("  Opening response")
     # retrieve response for hard, normal, soft GRB spectral templates
     skygrid = SkyGrid(search_config['skygrid_resolution'])
@@ -322,6 +323,7 @@ def main():
     results = search.run(timebins, progress=progress, description="  Searching")
     progress.stop()
     progress.remove_task(progress.tasks[0].id)
+
 
     # append common coordinate transformations
     frames = search.instrument_data['gbm'].response._preprocessed['frames']
