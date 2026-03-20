@@ -30,6 +30,7 @@ import glob
 import time
 import numpy as np
 import healpy as hp
+import h5py
 import argparse
 import datetime
 import matplotlib
@@ -40,6 +41,9 @@ from scipy.spatial import cKDTree
 from rich.progress import Progress, TextColumn, TaskProgressColumn, TimeRemainingColumn
 from astropy.coordinates import SkyCoord, get_sun
 from gdt.core.plot.sky import EquatorialPlot
+from gdt.core.plot.lib import sky_point
+from gdt.core.tte import PhotonList, EventList
+from gdt.core.data_primitives import ResponseMatrix, Gti, Ebounds
 from gdt.core.collection import DataCollection
 from gdt.core.binning.binned import rebin_by_edge_index
 from gdt.core.binning.unbinned import bin_by_time
@@ -173,6 +177,8 @@ def main():
 
     parser = argparse.ArgumentParser("gbm_targeted_search.py", "Script for performing the GBM targeted search")
     parser.add_argument('-t', '--time', default=None, help="Time for continuous data search.")
+    parser.add_argument("--inj-ra", type=float,help="The right ascension of the generated injection in deg")
+    parser.add_argument("--inj-dec", type=float, help="The declination of the generated injection in deg")
     parser.add_argument('-b', '--burst-number', default=None, help="GBM burst number for on-board trigger search.")
     parser.add_argument('-f', '--format', type=str, default=None, choices=[None, 'gps', 'fermi', 'datetime'], help="Format of --trigger option.")
     parser.add_argument('-w', '--search-window-width', default=60, type=float, help="Search window around trigger time in seconds. The search will run from -width/2 until +width/2.")
@@ -182,6 +188,7 @@ def main():
     parser.add_argument('--num-steps', default=8, type=int, help="Sets duration window step size using duration/num_steps for steps larger than --min-step.")
     parser.add_argument('-s', '--skymap', default=None, type=str, help="Optional skymap file.")
     parser.add_argument('-o', '--results-dir', default='.', type=str, help="Directory for results output.")
+    parser.add_argument('--plot-flag', default=True, type=bool)
     parser.add_argument('-p', '--protocol', default='HTTPS', type=str, choices=protocols, help="Download Protocol.")
     parser.add_argument('-x', '--background-window', default=125.0, type=float, help="NaivePossion background window.")
     parser.add_argument('-y', '--background-poly', default=None, type=int, help="Polynomial background order.")
@@ -253,12 +260,72 @@ def main():
 
 
     tte_data = []
+    tte_sim_data = []
+    sim_list = []
+    tte_data_128 = []
+    tte_sim_data_128 = []
+    sim_list_128 = []
+    mask = np.array([])
+    det_list = np.array(["n0", "n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8", "n9", "na", "nb", "b0", "b1"])
     for i, det_config in enumerate(gbm_config['detectors'].values()):
         tte = update_tte_trigtime(GbmTte.open(tte_files[i]), trigtime.fermi)
-        tte = tte.rebin_energy(rebin_by_edge_index, np.array(det_config['channel_edges']))
-        tte_data.append(tte)
+        sim_file = np.load(f"{args.results_dir}/TEST_TTE_INJECTION_{i}.npz", allow_pickle=True)
+        if sim_file['times'].all() != None  :
+            mask = np.append(mask, True)
+            emin = [sim_file["ebounds"][i].emin for i in range(len(sim_file["ebounds"]))]
+            emax = [sim_file["ebounds"][i].emax for i in range(len(sim_file["ebounds"]))]
+            ebounds = Ebounds.from_bounds(emin, emax)
+            events = EventList(times=sim_file['times'], channels=sim_file['channels'], ebounds = ebounds)
+            #breakpoint()
+            #sim = simulateTTE(tte.ebounds, i+2, chanlo, chanhi, trigtime.fermi, trigtime.fermi+20)
+            sim = PhotonList.from_data(
+                events,
+                gti=Gti.from_bounds([events.time_range[0]], [events.time_range[1]])
+            )
+            updated_sim = update_tte_trigtime(sim, trigtime.fermi)
+            print("Merging")
+            tte_sim = PhotonList.merge([tte, updated_sim])
+            print("Merged")
+            tte_sim_data_128.append(tte_sim)
+            sim_list_128.append(updated_sim)
+            tte_data_128.append(tte)
+            tte_sim = tte_sim.rebin_energy(rebin_by_edge_index, np.array(det_config['channel_edges']))
+            updated_sim = updated_sim.rebin_energy(rebin_by_edge_index, np.array(det_config['channel_edges']))
+            tte = tte.rebin_energy(rebin_by_edge_index, np.array(det_config['channel_edges']))
+            tte_sim_data.append(tte_sim)
+            sim_list.append(updated_sim)
+            tte_data.append(tte)
+        
+        else:
+            tte = tte.rebin_energy(rebin_by_edge_index, np.array(det_config['channel_edges']))
+            tte_sim_data.append(tte)
+            mask = np.append(mask, False)
         progress.update(task, advance=1)
-    ttes = DataCollection.from_list(tte_data, names=gbm_config['detector_names'])
+
+    with h5py.File(f"{args.results_dir}/tte_sim_data.hdf5","w") as hf:
+        for i in range(len(det_list)):
+            print(tte_sim_data_128[i].data.times)
+            hf[f'{det_list[i]}/times'] = tte_sim_data_128[i].data.times
+            hf[f'{det_list[i]}/channels'] = tte_sim_data_128[i].data.channels
+            hf[f'{det_list[i]}/ebounds'] = tte_sim_data_128[i].data.ebounds.as_list()
+
+    with h5py.File(f"{args.results_dir}/tte_data.hdf5","w") as hf:
+        for i in range(len(det_list)):
+            print(tte_data_128[i].data.times)
+            hf[f'{det_list[i]}/times'] = tte_data_128[i].data.times
+            hf[f'{det_list[i]}/channels'] = tte_data_128[i].data.channels
+            hf[f'{det_list[i]}/ebounds'] = tte_data_128[i].data.ebounds.as_list()
+
+    with h5py.File(f"{args.results_dir}/sim_data.hdf5","w") as hf:
+        hf['flag'] = mask
+        mask = mask.astype(bool)
+        for i in range(len(det_list)):
+            print(sim_list_128[i].data.times)
+            hf[f'{det_list[i]}/times'] = sim_list_128[i].data.times
+            hf[f'{det_list[i]}/channels'] = sim_list_128[i].data.channels
+            hf[f'{det_list[i]}/ebounds'] = sim_list_128[i].data.ebounds.as_list()
+
+    ttes = DataCollection.from_list(tte_sim_data, names=gbm_config['detector_names'])
     progress.stop()
     progress.remove_task(task)
 
@@ -375,83 +442,85 @@ def main():
         values[0] = values[0] + 0.5 * values[1] # convert to tcent
         print(
             "%13.3f %7.3f %3d %4d %4d  %5.1f %5.1f %5.1f %5.1f %1d %5.2f %5.1f %5.1f %5.1f %5.1f %5.1f %5.1f %5.1f %8.2f %8.2f %5.1f %5.1f %5.1f" % tuple(values))
+    if args.plot_flag:
+        print("\nCreating the following plots:")
 
-    print("\nCreating the following plots:")
+        print("\nOrbital plot...")
+        orbit_filename = os.path.join(args.results_dir, "Orbit.png")
+        plot_orbit(spacecraft_frames, trigtime, orbit_filename, GbmSaa())
+        print("Done.")
 
-    print("\nOrbital plot...")
-    orbit_filename = os.path.join(args.results_dir, "Orbit.png")
-    plot_orbit(spacecraft_frames, trigtime, orbit_filename, GbmSaa())
-    print("Done.")
-
-    print("\nWaterfall plots...")
-    w = Waterfall(results, trigtime)
-    loglr_filename = os.path.join(args.results_dir, 'Loglr.png')
-    w.plot_loglr(loglr_filename, val_min=3.0)
-    loglr_spec_filename = os.path.join(args.results_dir, 'Loglr_spec.png')
-    w.plot_loglr(loglr_spec_filename, val_min=3.0, spectra=True)
-    print("Done.")
-
-
-    print("\nLightcurve plots...")
-    nai = list(nai_configs.keys())
-    bgo = list(bgo_configs.keys())
-    time_range = search_config['search_range']
-    lcplotter = TargetedLightcurves(search.instrument_data['gbm'], trigtime)
+        print("\nWaterfall plots...")
+        w = Waterfall(results, trigtime)
+        loglr_filename = os.path.join(args.results_dir, 'Loglr.png')
+        w.plot_loglr(loglr_filename, val_min=3.0)
+        loglr_spec_filename = os.path.join(args.results_dir, 'Loglr_spec.png')
+        w.plot_loglr(loglr_spec_filename, val_min=3.0, spectra=True)
+        print("Done.")
 
 
-    for i in range(filtered_results.size):
-        progress.start()
-        task = progress.add_task(f"  Lightcurves for Event {i+1}...", total=12)
+        print("\nLightcurve plots...")
+        nai = list(nai_configs.keys())
+        bgo = list(bgo_configs.keys())
+        time_range = search_config['search_range']
+        lcplotter = TargetedLightcurves(search.instrument_data['gbm'], trigtime)
 
-        duration, tstart = filtered_results['duration'][i], filtered_results['tstart'][i]
 
-        [(lcplotter.plot_summed(duration, time_range=time_range, event_time=tstart, **kwargs), progress.update(task, advance=1))
-         for kwargs in [
-            {'filename': os.path.join(args.results_dir, f"Event{i}_Summed_All_NaI_Chan1-6.png"), 'detectors': nai, 'channel_range': (1, 6)},
-            {'filename': os.path.join(args.results_dir, f"Event{i}_Summed_Right_NaI_Chan3-4.png"), 'detectors': nai[:6], 'channel_range': (3, 4)},
-            {'filename': os.path.join(args.results_dir, f"Event{i}_Summed_Left_NaI_Chan3-4.png"), 'detectors': nai[6:], 'channel_range': (3, 4)},
-            {'filename': os.path.join(args.results_dir, f"Event{i}_Summed_All_BGO_Chan0-3.png"), 'detectors': bgo, 'channel_range': (0, 3)}]]
+        for i in range(filtered_results.size):
+            progress.start()
+            task = progress.add_task(f"  Lightcurves for Event {i+1}...", total=12)
 
-        [(lcplotter.plot_channels(duration, time_range=time_range, event_time=tstart, **kwargs), progress.update(task, advance=1))
-         for kwargs in [
-            {'filename': os.path.join(args.results_dir, f"Event{i}_Channel_All_NaI_Chan0-7.png"), 'detectors': nai, 'channels': [0, 1, 2, 3, 4, 5, 6, 7]},
-            {'filename': os.path.join(args.results_dir, f"Event{i}_Channel_Right_NaI_Chan0-7.png"), 'detectors': nai[:6], 'channels': [0, 1, 2, 3, 4, 5, 6, 7]},
-            {'filename': os.path.join(args.results_dir, f"Event{i}_Channel_Left_NaI_Chan0-7.png"), 'detectors': nai[6:], 'channels': [0, 1, 2, 3, 4, 5, 6, 7]},
-            {'filename': os.path.join(args.results_dir, f"Event{i}_Channel_All_BGO_Chan0-3.png"), 'detectors': bgo, 'channels': [0, 1, 2, 3]}]]
+            duration, tstart = filtered_results['duration'][i], filtered_results['tstart'][i]
 
-        [(lcplotter.plot_detectors(duration, time_range=time_range, event_time=tstart, **kwargs), progress.update(task, advance=1))
-         for kwargs in [
-            {'filename': os.path.join(args.results_dir, f"Event{i}_Detector_All_NaI_Chan1-6.png"), 'detectors': nai, 'channel_range': (1, 6)},
-            {'filename': os.path.join(args.results_dir, f"Event{i}_Detector_All_NaI_Chan1-2.png"), 'detectors': nai, 'channel_range': (1, 2)},
-            {'filename': os.path.join(args.results_dir, f"Event{i}_Detector_All_NaI_Chan3-4.png"), 'detectors': nai, 'channel_range': (3, 4)},
-            {'filename': os.path.join(args.results_dir, f"Event{i}_Detector_All_BGO_Chan1-6.png"), 'detectors': bgo, 'channel_range': (1, 6)}]]
+            [(lcplotter.plot_summed(duration, time_range=time_range, event_time=tstart, **kwargs), progress.update(task, advance=1))
+             for kwargs in [
+                {'filename': os.path.join(args.results_dir, f"Event{i}_Summed_All_NaI_Chan1-6.png"), 'detectors': nai, 'channel_range': (1, 6)},
+                {'filename': os.path.join(args.results_dir, f"Event{i}_Summed_Right_NaI_Chan3-4.png"), 'detectors': nai[:6], 'channel_range': (3, 4)},
+                {'filename': os.path.join(args.results_dir, f"Event{i}_Summed_Left_NaI_Chan3-4.png"), 'detectors': nai[6:], 'channel_range': (3, 4)},
+                {'filename': os.path.join(args.results_dir, f"Event{i}_Summed_All_BGO_Chan0-3.png"), 'detectors': bgo, 'channel_range': (0, 3)}]]
 
-        progress.stop()
-        progress.remove_task(task)
-    print("Done.")
+            [(lcplotter.plot_channels(duration, time_range=time_range, event_time=tstart, **kwargs), progress.update(task, advance=1))
+             for kwargs in [
+                {'filename': os.path.join(args.results_dir, f"Event{i}_Channel_All_NaI_Chan0-7.png"), 'detectors': nai, 'channels': [0, 1, 2, 3, 4, 5, 6, 7]},
+                {'filename': os.path.join(args.results_dir, f"Event{i}_Channel_Right_NaI_Chan0-7.png"), 'detectors': nai[:6], 'channels': [0, 1, 2, 3, 4, 5, 6, 7]},
+                {'filename': os.path.join(args.results_dir, f"Event{i}_Channel_Left_NaI_Chan0-7.png"), 'detectors': nai[6:], 'channels': [0, 1, 2, 3, 4, 5, 6, 7]},
+                {'filename': os.path.join(args.results_dir, f"Event{i}_Channel_All_BGO_Chan0-3.png"), 'detectors': bgo, 'channels': [0, 1, 2, 3]}]]
 
-    print("\nLocalizations...")
-    for i, result in enumerate(filtered_results):
-        loc = GetGbmLocalization(search, result, trigtime)
-        loc.write(args.results_dir, filename=f"Event{i+1}_healpix.fit", overwrite=True)
-        skyplot = EquatorialPlot()
-        skyplot.add_localization(loc, clevels=[0.90, 0.50], gradient=False)
-        plt.savefig(f"Event{i+1}_skymap.png", dpi=300)
-        plt.clf()
+            [(lcplotter.plot_detectors(duration, time_range=time_range, event_time=tstart, **kwargs), progress.update(task, advance=1))
+             for kwargs in [
+                {'filename': os.path.join(args.results_dir, f"Event{i}_Detector_All_NaI_Chan1-6.png"), 'detectors': nai, 'channel_range': (1, 6)},
+                {'filename': os.path.join(args.results_dir, f"Event{i}_Detector_All_NaI_Chan1-2.png"), 'detectors': nai, 'channel_range': (1, 2)},
+                {'filename': os.path.join(args.results_dir, f"Event{i}_Detector_All_NaI_Chan3-4.png"), 'detectors': nai, 'channel_range': (3, 4)},
+                {'filename': os.path.join(args.results_dir, f"Event{i}_Detector_All_BGO_Chan1-6.png"), 'detectors': bgo, 'channel_range': (1, 6)}]]
 
-        # combined localization
-        if args.skymap is not None:
-            region_prob = loc.region_probability(args.skymap) * 100.0
-            print(f"  Event {i+1} Spatial Association: {region_prob:3.1f}%")
-            if region_prob > 50.0:
-                combined = loc.multiply(loc, args.skymap)
-                combined.write(args.results_dir, 
-                               filename=f"Event{i+1}_healpix_combined.fit", overwrite=True)
+            progress.stop()
+            progress.remove_task(task)
+        print("Done.")
 
-                skyplot = EquatorialPlot()
-                skyplot.add_localization(combined, clevels=[0.9, 0.5], gradient=False)
-                plt.savefig(f"Event{i+1}_skymap_combined.png", dpi=300)
-                plt.clf()
+        print("\nLocalizations...")
+        for i, result in enumerate(filtered_results):
+            loc = GetGbmLocalization(search, result, trigtime)
+            loc.write(args.results_dir, filename=f"Event{i+1}_healpix.fit", overwrite=True)
+            skyplot = EquatorialPlot()
+            skyplot.add_localization(loc, clevels=[0.90, 0.50], gradient=False)
+            sky_point(args.inj_ra, args.inj_dec, skyplot.ax, frame="equatorial", marker="*", c="r",label="True sky location")
+            plt.legend()
+            plt.savefig(f"Event{i+1}_skymap.png", dpi=300)
+            plt.clf()
+
+            # combined localization
+            if args.skymap is not None:
+                region_prob = loc.region_probability(args.skymap) * 100.0
+                print(f"  Event {i+1} Spatial Association: {region_prob:3.1f}%")
+                if region_prob > 50.0:
+                    combined = loc.multiply(loc, args.skymap)
+                    combined.write(args.results_dir, 
+                                   filename=f"Event{i+1}_healpix_combined.fit", overwrite=True)
+
+                    skyplot = EquatorialPlot()
+                    skyplot.add_localization(combined, clevels=[0.9, 0.5], gradient=False)
+                    plt.savefig(f"Event{i+1}_skymap_combined.png", dpi=300)
+                    plt.clf()
 
     print("Done.")
 
