@@ -47,10 +47,11 @@ from gdt.core.background.binned import Polynomial
 from gdt.core.background.unbinned import NaivePoisson
 from gdt.missions.fermi.time import Time
 from gdt.missions.fermi.gbm.saa import GbmSaa
-from gdt.missions.fermi.gbm.tte import GbmTte
+from gdt.missions.fermi.gbm.tte import GbmTte, GbmPhaii
 from gdt.missions.fermi.gbm.poshist import GbmPosHist
 from gdt.missions.fermi.gbm.detectors import GbmDetectors
 from gdt.missions.fermi.gbm.localization import GbmHealPix
+<<<<<<< HEAD
 from gdt.missions.fermi.gbm.finders import ContinuousFinder, TriggerFinder
 
 from data import FitStatus
@@ -83,6 +84,7 @@ def GetData(trigger_id, settings, data_directory, protocol='HTTPS'):
 
     # boolean for specifying requested data type (triggered or continuous)
     triggered = isinstance(trigger_id, str)
+    print(trigger_id, triggered, type(trigger_id), trigger_id.fermi)
 
     # format file paths
     sub_dir = trigger_id if triggered else "%.3f" % trigger_id.fermi
@@ -331,6 +333,8 @@ def main():
     )
     results.append_fields('in_gti', np.ones(results.size, dtype=int))
 
+    print(search['response'])
+    print(np.shape(search['response']))
     # filter results to produce up to 3 top candidates
     filtered_results = results.filter(remove_pe)
     filtered_results = filtered_results.filter(downselect, threshold=search_config['min_loglr'], no_empty=True)
@@ -382,11 +386,13 @@ def main():
     w.plot_loglr(loglr_spec_filename, val_min=3.0, spectra=True)
     print("Done.")
 
+
     print("\nLightcurve plots...")
     nai = list(nai_configs.keys())
     bgo = list(bgo_configs.keys())
     time_range = search_config['search_range']
     lcplotter = TargetedLightcurves(search.instrument_data['gbm'], trigtime)
+
     for i in range(filtered_results.size):
         progress.start()
         task = progress.add_task(f"  Lightcurves for Event {i+1}...", total=12)
@@ -399,6 +405,7 @@ def main():
             {'filename': os.path.join(args.results_dir, f"Event{i}_Summed_Right_NaI_Chan3-4.png"), 'detectors': nai[:6], 'channel_range': (3, 4)},
             {'filename': os.path.join(args.results_dir, f"Event{i}_Summed_Left_NaI_Chan3-4.png"), 'detectors': nai[6:], 'channel_range': (3, 4)},
             {'filename': os.path.join(args.results_dir, f"Event{i}_Summed_All_BGO_Chan0-3.png"), 'detectors': bgo, 'channel_range': (0, 3)}]]
+
 
         [(lcplotter.plot_channels(duration, time_range=time_range, event_time=tstart, **kwargs), progress.update(task, advance=1))
          for kwargs in [
@@ -422,7 +429,6 @@ def main():
     for i, result in enumerate(filtered_results):
         loc = GetGbmLocalization(search, result, trigtime)
         loc.write(args.results_dir, filename=f"Event{i+1}_healpix.fit", overwrite=True)
-
         skyplot = EquatorialPlot()
         skyplot.add_localization(loc, clevels=[0.90, 0.50], gradient=False)
         plt.savefig(f"Event{i+1}_skymap.png", dpi=300)
