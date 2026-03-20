@@ -65,6 +65,7 @@ from configuration import InstrumentConfiguration, SearchConfiguration
 
 basedir = os.path.dirname(os.path.abspath(__file__))
 
+
 def GetData(trigger_id, settings, data_directory, protocol='HTTPS'):
     """ Method for downloading data needed by the targeted search
 
@@ -391,6 +392,7 @@ def main():
     time_range = search_config['search_range']
     lcplotter = TargetedLightcurves(search.instrument_data['gbm'], trigtime)
 
+
     for i in range(filtered_results.size):
         progress.start()
         task = progress.add_task(f"  Lightcurves for Event {i+1}...", total=12)
@@ -403,7 +405,6 @@ def main():
             {'filename': os.path.join(args.results_dir, f"Event{i}_Summed_Right_NaI_Chan3-4.png"), 'detectors': nai[:6], 'channel_range': (3, 4)},
             {'filename': os.path.join(args.results_dir, f"Event{i}_Summed_Left_NaI_Chan3-4.png"), 'detectors': nai[6:], 'channel_range': (3, 4)},
             {'filename': os.path.join(args.results_dir, f"Event{i}_Summed_All_BGO_Chan0-3.png"), 'detectors': bgo, 'channel_range': (0, 3)}]]
-
 
         [(lcplotter.plot_channels(duration, time_range=time_range, event_time=tstart, **kwargs), progress.update(task, advance=1))
          for kwargs in [
