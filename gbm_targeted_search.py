@@ -51,7 +51,6 @@ from gdt.missions.fermi.gbm.tte import GbmTte, GbmPhaii
 from gdt.missions.fermi.gbm.poshist import GbmPosHist
 from gdt.missions.fermi.gbm.detectors import GbmDetectors
 from gdt.missions.fermi.gbm.localization import GbmHealPix
-<<<<<<< HEAD
 from gdt.missions.fermi.gbm.finders import ContinuousFinder, TriggerFinder
 
 from data import FitStatus
@@ -254,7 +253,6 @@ def main():
         tte_data.append(tte)
         progress.update(task, advance=1)
     ttes = DataCollection.from_list(tte_data, names=gbm_config['detector_names'])
-
     progress.stop()
     progress.remove_task(task)
 
