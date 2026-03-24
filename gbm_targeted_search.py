@@ -188,7 +188,7 @@ def main():
     parser.add_argument('--num-steps', default=8, type=int, help="Sets duration window step size using duration/num_steps for steps larger than --min-step.")
     parser.add_argument('-s', '--skymap', default=None, type=str, help="Optional skymap file.")
     parser.add_argument('-o', '--results-dir', default='.', type=str, help="Directory for results output.")
-    parser.add_argument('--plot-flag', action=argparse.BooleanOptionalAction)
+    parser.add_argument('--plots', action=argparse.BooleanOptionalAction)
     parser.add_argument('-p', '--protocol', default='HTTPS', type=str, choices=protocols, help="Download Protocol.")
     parser.add_argument('-x', '--background-window', default=125.0, type=float, help="NaivePossion background window.")
     parser.add_argument('-y', '--background-poly', default=None, type=int, help="Polynomial background order.")
@@ -442,7 +442,7 @@ def main():
         values[0] = values[0] + 0.5 * values[1] # convert to tcent
         print(
             "%13.3f %7.3f %3d %4d %4d  %5.1f %5.1f %5.1f %5.1f %1d %5.2f %5.1f %5.1f %5.1f %5.1f %5.1f %5.1f %5.1f %8.2f %8.2f %5.1f %5.1f %5.1f" % tuple(values))
-    if args.plot_flag:
+    if args.plots:
         print("\nCreating the following plots:")
 
         print("\nOrbital plot...")
