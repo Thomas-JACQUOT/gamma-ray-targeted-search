@@ -79,7 +79,7 @@ def GetData(trigger_id, settings, data_directory):
                                          a Time() object for analyzing continuous data
         data_directory (str): Directory for downloaded data. Data will appear in a subfolder formatted as
                               'data/trigger_id' for triggered data and 'data/#########.###' for continuous data.
-                              
+
     Returns:
         (Time, [str, str, ...], str): tuple with Time() formatted trigger time, 
                                       list of TTE file paths, and position history path
@@ -93,12 +93,7 @@ def GetData(trigger_id, settings, data_directory):
     for det in settings['detectors']:
         tte_files.extend(glob.glob(tte_wildcard.replace("??", det)))
     poshist_files = sorted(glob.glob(poshist_wildcard))
-
-    # get trigtime from first triggered TTE file when using triggered files
-    if triggered:
-        trigtime = Time(GbmTte.open(tte_files[0]).headers[0]['TRIGTIME'], format='fermi')
-    else:
-        trigtime = trigger_id # trigger_id is already a Time() object for continuous case
+    trigtime = trigger_id # trigger_id is already a Time() object for continuous case
 
     # only return first poshist for now.
     # Need to work on crossover at day boundary.
