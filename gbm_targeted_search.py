@@ -409,7 +409,6 @@ def main():
             loc.write(args.results_dir, filename=f"Event{i+1}_healpix.fit", overwrite=True)
             skyplot = EquatorialPlot()
             skyplot.add_localization(loc, clevels=[0.90, 0.50], gradient=False)
-            sky_point(args.inj_ra, args.inj_dec, skyplot.ax, frame="equatorial", marker="*", c="r",label="True sky location")
             plt.legend()
             plt.savefig(f"Event{i+1}_skymap.png", dpi=300)
             plt.clf()
