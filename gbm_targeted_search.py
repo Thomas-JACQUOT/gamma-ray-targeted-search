@@ -36,14 +36,11 @@ import datetime
 import matplotlib
 #matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from scipy.spatial import cKDTree
 
 from rich.progress import Progress, TextColumn, TaskProgressColumn, TimeRemainingColumn
 from astropy.coordinates import SkyCoord, get_sun
 from gdt.core.plot.sky import EquatorialPlot
 from gdt.core.plot.lib import sky_point
-from gdt.core.tte import PhotonList, EventList
-from gdt.core.data_primitives import ResponseMatrix, Gti, Ebounds
 from gdt.core.collection import DataCollection
 from gdt.core.binning.binned import rebin_by_edge_index
 from gdt.core.binning.unbinned import bin_by_time
@@ -53,11 +50,10 @@ from gdt.core.background.unbinned import NaivePoisson
 
 from gdt.missions.fermi.time import Time
 from gdt.missions.fermi.gbm.saa import GbmSaa
-from gdt.missions.fermi.gbm.tte import GbmTte, GbmPhaii
+from gdt.missions.fermi.gbm.tte import GbmTte
 from gdt.missions.fermi.gbm.poshist import GbmPosHist
 from gdt.missions.fermi.gbm.detectors import GbmDetectors
 from gdt.missions.fermi.gbm.localization import GbmHealPix
-from gdt.missions.fermi.gbm.finders import ContinuousFinder, TriggerFinder
 
 
 
@@ -75,7 +71,7 @@ basedir = os.path.dirname(os.path.abspath(__file__))
 
 
 
-def GetData(trigger_id, settings, data_directory, protocol='HTTPS'):
+def GetData(trigger_id, settings, data_directory):
     """ Method for downloading data needed by the targeted search
 
     Args:
@@ -83,19 +79,12 @@ def GetData(trigger_id, settings, data_directory, protocol='HTTPS'):
                                          a Time() object for analyzing continuous data
         data_directory (str): Directory for downloaded data. Data will appear in a subfolder formatted as
                               'data/trigger_id' for triggered data and 'data/#########.###' for continuous data.
-        protocol (str): Download protocol. Can be 'HTTPS' or 'FTP'. 'AWS' is unsupported.
-
+                              
     Returns:
         (Time, [str, str, ...], str): tuple with Time() formatted trigger time, 
                                       list of TTE file paths, and position history path
     """
-    ftp = None
-
-    # boolean for specifying requested data type (triggered or continuous)
-    triggered = isinstance(trigger_id, str)
-    # format file paths
-    sub_dir = trigger_id if triggered else "%.3f" % trigger_id.fermi
-    path = f"{data_directory}/{sub_dir}"
+    path = f"{data_directory}"
     tte_wildcard = f"{path}/*tte_??_*.fit*"
     poshist_wildcard = f"{path}/glg_poshist_all_*.fit"
     
@@ -105,24 +94,11 @@ def GetData(trigger_id, settings, data_directory, protocol='HTTPS'):
         tte_files.extend(glob.glob(tte_wildcard.replace("??", det)))
     poshist_files = sorted(glob.glob(poshist_wildcard))
 
-    if len(tte_files) < len(settings['detectors']):
-        finder = TriggerFinder(trigger_id, protocol=protocol) if triggered else ContinuousFinder(trigger_id, protocol=protocol)
-        tte_files = [finder.get_tte(path, dets=[det])[0] for det in settings['detectors']]
-
     # get trigtime from first triggered TTE file when using triggered files
     if triggered:
         trigtime = Time(GbmTte.open(tte_files[0]).headers[0]['TRIGTIME'], format='fermi')
     else:
         trigtime = trigger_id # trigger_id is already a Time() object for continuous case
-
-    # ensure we have a position history file
-    if not len(poshist_files):
-        finder = ContinuousFinder(trigtime, protocol=protocol)
-        finder.get_poshist(path)
-        poshist_files = sorted(glob.glob(poshist_wildcard))
-            
-    if len(tte_files) != len(settings['detectors']) or not len(poshist_files):
-        raise ValueError("Could not download or locate files. Check ")
 
     # only return first poshist for now.
     # Need to work on crossover at day boundary.
@@ -177,8 +153,6 @@ def main():
 
     parser = argparse.ArgumentParser("gbm_targeted_search.py", "Script for performing the GBM targeted search")
     parser.add_argument('-t', '--time', default=None, help="Time for continuous data search.")
-    parser.add_argument("--inj-ra", type=float,help="The right ascension of the generated injection in deg")
-    parser.add_argument("--inj-dec", type=float, help="The declination of the generated injection in deg")
     parser.add_argument('-b', '--burst-number', default=None, help="GBM burst number for on-board trigger search.")
     parser.add_argument('-f', '--format', type=str, default=None, choices=[None, 'gps', 'fermi', 'datetime'], help="Format of --trigger option.")
     parser.add_argument('-w', '--search-window-width', default=60, type=float, help="Search window around trigger time in seconds. The search will run from -width/2 until +width/2.")
@@ -189,12 +163,12 @@ def main():
     parser.add_argument('-s', '--skymap', default=None, type=str, help="Optional skymap file.")
     parser.add_argument('-o', '--results-dir', default='.', type=str, help="Directory for results output.")
     parser.add_argument('--plots', action=argparse.BooleanOptionalAction)
+    parser.add_argument('--input-file-path', default='.', type=str, help="Path of input files, tte/poshist files.")
     parser.add_argument('-p', '--protocol', default='HTTPS', type=str, choices=protocols, help="Download Protocol.")
     parser.add_argument('-x', '--background-window', default=125.0, type=float, help="NaivePossion background window.")
     parser.add_argument('-y', '--background-poly', default=None, type=int, help="Polynomial background order.")
     parser.add_argument('-z', '--background-range', default=[-500, 500], nargs="+", type=float, help="Background fit range(s).")
     parser.add_argument('--flatten', action='store_true', help="Flatten multiorder skymaps.")
-
     
     print("\n"  + " ".join(sys.argv) +  "\n")
 
@@ -251,81 +225,21 @@ def main():
          'bkgd_range': args.background_range, 'bkgd_window': args.background_window,
          'data_range': np.array([-0.5, 0.5]) * (args.search_window_width + args.max_dur)})
 
-    trigtime, tte_files, poshist_file = GetData(trigger, gbm_config, "data/gbm", args.protocol)
+    trigtime, tte_files, poshist_file = GetData(trigger, gbm_config, f"{args.input_file_path}")
 
     print("Preparing data...")
 
     progress.start()
     task = progress.add_task("  Opening TTE", total=len(gbm_config['detectors']))
 
-
     tte_data = []
-    tte_sim_data = []
-    sim_list = []
-    tte_data_128 = []
-    tte_sim_data_128 = []
-    sim_list_128 = []
-    mask = np.array([])
-    det_list = np.array(["n0", "n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8", "n9", "na", "nb", "b0", "b1"])
     for i, det_config in enumerate(gbm_config['detectors'].values()):
         tte = update_tte_trigtime(GbmTte.open(tte_files[i]), trigtime.fermi)
-        sim_file = np.load(f"{args.results_dir}/TEST_TTE_INJECTION_{i}.npz", allow_pickle=True)
-        if sim_file['times'].all() != None  :
-            mask = np.append(mask, True)
-            emin = [sim_file["ebounds"][i].emin for i in range(len(sim_file["ebounds"]))]
-            emax = [sim_file["ebounds"][i].emax for i in range(len(sim_file["ebounds"]))]
-            ebounds = Ebounds.from_bounds(emin, emax)
-            events = EventList(times=sim_file['times'], channels=sim_file['channels'], ebounds = ebounds)
-            #breakpoint()
-            #sim = simulateTTE(tte.ebounds, i+2, chanlo, chanhi, trigtime.fermi, trigtime.fermi+20)
-            sim = PhotonList.from_data(
-                events,
-                gti=Gti.from_bounds([events.time_range[0]], [events.time_range[1]])
-            )
-            updated_sim = update_tte_trigtime(sim, trigtime.fermi)
-            print("Merging")
-            tte_sim = PhotonList.merge([tte, updated_sim])
-            print("Merged")
-            tte_sim_data_128.append(tte_sim)
-            sim_list_128.append(updated_sim)
-            tte_data_128.append(tte)
-            tte_sim = tte_sim.rebin_energy(rebin_by_edge_index, np.array(det_config['channel_edges']))
-            updated_sim = updated_sim.rebin_energy(rebin_by_edge_index, np.array(det_config['channel_edges']))
-            tte = tte.rebin_energy(rebin_by_edge_index, np.array(det_config['channel_edges']))
-            tte_sim_data.append(tte_sim)
-            sim_list.append(updated_sim)
-            tte_data.append(tte)
-        
-        else:
-            tte = tte.rebin_energy(rebin_by_edge_index, np.array(det_config['channel_edges']))
-            tte_sim_data.append(tte)
-            mask = np.append(mask, False)
+        tte = tte.rebin_energy(rebin_by_edge_index, np.array(det_config['channel_edges']))
+        tte_data.append(tte)
         progress.update(task, advance=1)
+    ttes = DataCollection.from_list(tte_data, names=gbm_config['detector_names'])
 
-    with h5py.File(f"{args.results_dir}/tte_sim_data.hdf5","w") as hf:
-        for i in range(len(det_list)):
-            print(tte_sim_data_128[i].data.times)
-            hf[f'{det_list[i]}/times'] = tte_sim_data_128[i].data.times
-            hf[f'{det_list[i]}/channels'] = tte_sim_data_128[i].data.channels
-            hf[f'{det_list[i]}/ebounds'] = tte_sim_data_128[i].data.ebounds.as_list()
-
-    with h5py.File(f"{args.results_dir}/tte_data.hdf5","w") as hf:
-        for i in range(len(det_list)):
-            print(tte_data_128[i].data.times)
-            hf[f'{det_list[i]}/times'] = tte_data_128[i].data.times
-            hf[f'{det_list[i]}/channels'] = tte_data_128[i].data.channels
-            hf[f'{det_list[i]}/ebounds'] = tte_data_128[i].data.ebounds.as_list()
-
-    with h5py.File(f"{args.results_dir}/sim_data.hdf5","w") as hf:
-        hf['flag'] = mask
-        mask = mask.astype(bool)
-        for i in range(len(det_list)):
-            print(sim_list_128[i].data.times)
-            hf[f'{det_list[i]}/times'] = sim_list_128[i].data.times
-            hf[f'{det_list[i]}/channels'] = sim_list_128[i].data.channels
-            hf[f'{det_list[i]}/ebounds'] = sim_list_128[i].data.ebounds.as_list()
-
-    ttes = DataCollection.from_list(tte_sim_data, names=gbm_config['detector_names'])
     progress.stop()
     progress.remove_task(task)
 
@@ -340,12 +254,10 @@ def main():
                            os.path.join(basedir, 'templates/GBM'),
                            spacecraft_frames, trigtime.fermi, templates=[0, 1, 2])
 
-
     print("  Binning TTE")
     phaiis = DataCollection.from_list(
          ttes.to_phaii(bin_by_time, search_config['time_resolution'], time_ref=0, time_range=search_config['data_range']),
          names=gbm_config['detector_names'])
-
 
     print("  Fitting background")
     backfitters = None
@@ -390,7 +302,6 @@ def main():
     results = search.run(timebins, progress=progress, description="  Searching")
     progress.stop()
     progress.remove_task(progress.tasks[0].id)
-
 
     # append common coordinate transformations
     frames = search.instrument_data['gbm'].response._preprocessed['frames']
