@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/home/thomas-jacquot/.conda/envs/up2dategts/bin/python
 
 import argparse
 import subprocess
