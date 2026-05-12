@@ -326,6 +326,7 @@ def main():
         search.calculate_likelihood(result['tstart'], result['tstart'] + result['duration'])
         result['coinclr'] = calculate_coinclr(search, result, args.skymap)
 
+    os.makedirs(args.results_dir, exist_ok=True)
     results.save(args.results_dir, "full_results.npz")
     filtered_results.save(args.results_dir, "filtered_results.npz")
 
