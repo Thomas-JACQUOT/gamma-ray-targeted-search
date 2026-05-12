@@ -87,7 +87,7 @@ def GetData(trigger_id, settings, data_directory):
     """
     path = f"{data_directory}"
     tte_wildcard = f"{path}/*tte_??_*.fit*"
-    poshist_wildcard = f"{path}/glg_poshist_all_*.fit"
+    poshist_wildcard = f"{path}/../glg_poshist_all_*.fit"
     
     # check for files
     tte_files = []
