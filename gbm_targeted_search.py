@@ -1,3 +1,4 @@
+#!/home/thomas-jacquot/.conda/envs/up2dategts/bin/python3
 # Copyright 2017-2022 by Universities Space Research Association (USRA). All rights reserved.
 #
 # Developed by: William Cleveland and Adam Goldstein
@@ -75,7 +76,7 @@ basedir = os.path.dirname(os.path.abspath(__file__))
 
 
 
-def GetData(trigger_id, settings, data_directory, protocol='HTTPS'):
+def GetData(trigger_id, settings, data_directory):
     """ Method for downloading data needed by the targeted search
 
     Args:
@@ -89,176 +90,24 @@ def GetData(trigger_id, settings, data_directory, protocol='HTTPS'):
         (Time, [str, str, ...], str): tuple with Time() formatted trigger time, 
                                       list of TTE file paths, and position history path
     """
-    ftp = None
-
-    # boolean for specifying requested data type (triggered or continuous)
-    triggered = isinstance(trigger_id, str)
-    # format file paths
-    sub_dir = trigger_id if triggered else "%.3f" % trigger_id.fermi
-    path = f"{data_directory}/{sub_dir}"
+    path = f"{data_directory}"
     tte_wildcard = f"{path}/*tte_??_*.fit*"
-    poshist_wildcard = f"{path}/glg_poshist_all_*.fit"
-    
+    poshist_wildcard = f"{path}/../glg_poshist_all_*.fit"
+
     # check for files
     tte_files = []
     for det in settings['detectors']:
         tte_files.extend(glob.glob(tte_wildcard.replace("??", det)))
     poshist_files = sorted(glob.glob(poshist_wildcard))
-
-    if len(tte_files) < len(settings['detectors']):
-        finder = TriggerFinder(trigger_id, protocol=protocol) if triggered else ContinuousFinder(trigger_id, protocol=protocol)
-        tte_files = [finder.get_tte(path, dets=[det])[0] for det in settings['detectors']]
-
-    # get trigtime from first triggered TTE file when using triggered files
-    if triggered:
-        trigtime = Time(GbmTte.open(tte_files[0]).headers[0]['TRIGTIME'], format='fermi')
-    else:
-        trigtime = trigger_id # trigger_id is already a Time() object for continuous case
-
-    # ensure we have a position history file
-    if not len(poshist_files):
-        finder = ContinuousFinder(trigtime, protocol=protocol)
-        finder.get_poshist(path)
-        poshist_files = sorted(glob.glob(poshist_wildcard))
-            
-    if len(tte_files) != len(settings['detectors']) or not len(poshist_files):
-        raise ValueError("Could not download or locate files. Check ")
+    trigtime = trigger_id # trigger_id is already a Time() object for continuous case
 
     # only return first poshist for now.
     # Need to work on crossover at day boundary.
     return trigtime, tte_files, poshist_files[0]
 
-def GetGbmLocalization(search, result, time_ref, include_systematic=True):
-    """Compute GBM location with systematic error modeled as
-    a double Gaussian (core + tail) shape.
-
-    Args:
-        search (TargetedSearch): Search object
-        result (Results): Result object
-        time_ref (Time): Reference time for the tstart value of result
-        include_systematic (bool): Include systematic error when True
-
-    Returns:
-        (GbmHealPix)
-    """
-    # recompute likelihood without sky masking for this timebin
-    search.calculate_likelihood(result['tstart'], result['tstart'] + result['duration'], sky_mask=False)
-
-    # compute sky probability for max template
-    prob = np.exp(search.like.llr - np.max(search.like.llr))[result['template'], :]
-
-    # project to NSIDE 64 healpix
-    proj_prob, _ = grid_to_healpix(
-        prob, search.like_points, search.like_frame, nside_out=64)
-
-    # upscale to NSIDE 128
-    hires_nside = 128
-    hires_npix = hp.nside2npix(hires_nside)
-    theta, phi = hp.pix2ang(hires_nside, np.arange(hires_npix))
-    upscaled_prob = hp.get_interp_val(proj_prob, theta, phi)
-
-    # build GbmHealpix object
-    loc = GbmHealPix.from_data(upscaled_prob, trigtime=time_ref.fermi + result['tstart'],
-                               quaternion=search.like_frame.quaternion, scpos=search.like_frame.obsgeoloc)
-
-    # apply systematic error
-    if include_systematic:
-        systematic = (O3_DGAUSS_Model, result['in_rock'], result['zen'])
-        loc = loc.convolve(*systematic)
-
-    # remove Earth region
-    loc.remove_earth()
-
-    return loc
-
-def main():
-
-    protocols = ['HTTPS', 'FTP']
-
-    parser = argparse.ArgumentParser("gbm_targeted_search.py", "Script for performing the GBM targeted search")
-    parser.add_argument('-t', '--time', default=None, help="Time for continuous data search.")
-    parser.add_argument("--inj-ra", type=float,help="The right ascension of the generated injection in deg")
-    parser.add_argument("--inj-dec", type=float, help="The declination of the generated injection in deg")
-    parser.add_argument('-b', '--burst-number', default=None, help="GBM burst number for on-board trigger search.")
-    parser.add_argument('-f', '--format', type=str, default=None, choices=[None, 'gps', 'fermi', 'datetime'], help="Format of --trigger option.")
-    parser.add_argument('-w', '--search-window-width', default=60, type=float, help="Search window around trigger time in seconds. The search will run from -width/2 until +width/2.")
-    parser.add_argument('--min-dur', default=0.064, type=float, help="Minimum duration of GRB transient in seconds.")
-    parser.add_argument('--max-dur', default=8.192, type=float, help="Maximum duration of GRB transient in seconds.")
-    parser.add_argument('--min-step', default=0.064, type=float, help="Minimum time step size in seconds used to move duration window.")
-    parser.add_argument('--num-steps', default=8, type=int, help="Sets duration window step size using duration/num_steps for steps larger than --min-step.")
-    parser.add_argument('-s', '--skymap', default=None, type=str, help="Optional skymap file.")
-    parser.add_argument('-o', '--results-dir', default='.', type=str, help="Directory for results output.")
-    parser.add_argument('--plots', action=argparse.BooleanOptionalAction)
-    parser.add_argument('-p', '--protocol', default='HTTPS', type=str, choices=protocols, help="Download Protocol.")
-    parser.add_argument('-x', '--background-window', default=125.0, type=float, help="NaivePossion background window.")
-    parser.add_argument('-y', '--background-poly', default=None, type=int, help="Polynomial background order.")
-    parser.add_argument('-z', '--background-range', default=[-500, 500], nargs="+", type=float, help="Background fit range(s).")
-    parser.add_argument('--flatten', action='store_true', help="Flatten multiorder skymaps.")
-
-    
-    print("\n"  + " ".join(sys.argv) +  "\n")
-
-    args = parser.parse_args()
-
-    progress = Progress(TextColumn("[progress.description]{task.description}"),
-                        TaskProgressColumn(), TimeRemainingColumn(elapsed_when_finished=True))
-
-    # default behavior
-    trigger = args.burst_number
-
-    if args.time is None and args.skymap is None and args.burst_number is None:
-        raise ValueError("User must provide at least --time, --skymap, or --burst-number")
-
-    if args.format is None and args.time is not None:
-        raise ValueError("User must specify time format with --format")
-
-    if args.background_poly is None and len(args.background_range) != 2:
-        raise ValueError("User must provide two values to --background-range for NaivePoisson fit")
-
-    if args.background_poly is not None and len(args.background_range) % 2 != 0:
-        raise ValueError("User must provide an even number of values to --background-range for Polynomial fit")
-
-    if args.skymap:
-        args.skymap = LigoHealPix.open(args.skymap, min_nside=128, flatten=args.flatten, prob_only=False)
-        if args.time is None and args.burst_number is None:
-            args.time = args.skymap.trigtime
-            args.format = 'datetime'
-
-    if args.background_poly:
-        # reformat as separate fit intervals for the background polynomial
-        args.background_range = [
-            (args.background_range[i], args.background_range[i+1]) for i in range(0, len(args.background_range), 2)]
-
-    # apply trigger formatting for Time() object trigger types.
-    # Note: setting --time will over-ride skymap time.
-    if args.time:
-        if args.format == 'datetime':
-            value = datetime.datetime.fromisoformat(args.time)
-        else:
-            value = float(args.time)
-        trigger = Time(value, format=args.format)
-
-    nai_configs = {det.name: {'channel_edges': [0, 8, 20, 33, 51, 85, 106, 127, 128], 'search_channels': [1, 2, 3, 4, 5, 6]} for det in GbmDetectors.nai()}
-    bgo_configs = {det.name: {'channel_edges': [0, 8, 21, 40, 65, 90, 112, 124, 128], 'search_channels': [0, 1, 2, 3, 4, 5, 6, 7]} for det in GbmDetectors.bgo()}
-    gbm_config = InstrumentConfiguration('gbm', nai_configs | bgo_configs)
-
-    search_config = SearchConfiguration(instruments=[gbm_config])
-    search_config.settings.update({
-         'win_width': args.search_window_width,
-         'min_loglr': 5,
-         'min_dur': args.min_dur, 'max_dur': args.max_dur,
-         'min_step': args.min_step,'num_steps': args.num_steps,
-         'bkgd_range': args.background_range, 'bkgd_window': args.background_window,
-         'data_range': np.array([-0.5, 0.5]) * (args.search_window_width + args.max_dur)})
-
-    trigtime, tte_files, poshist_file = GetData(trigger, gbm_config, "data/gbm", args.protocol)
-
-    print("Preparing data...")
-
+def BuildTteInjList(tte_files, gbm_config, trigtime, inj_files, progress):
     progress.start()
     task = progress.add_task("  Opening TTE", total=len(gbm_config['detectors']))
-
-
     tte_data = []
     tte_sim_data = []
     sim_list = []
@@ -325,9 +174,160 @@ def main():
             hf[f'{det_list[i]}/channels'] = sim_list_128[i].data.channels
             hf[f'{det_list[i]}/ebounds'] = sim_list_128[i].data.ebounds.as_list()
 
-    ttes = DataCollection.from_list(tte_sim_data, names=gbm_config['detector_names'])
+    tte_injs = DataCollection.from_list(tte_sim_data, names=gbm_config['detector_names'])
     progress.stop()
     progress.remove_task(task)
+    return tte_injs
+
+def BuildTteList(tte_files, gbm_config, trigtime, progress): 
+    progress.start()
+    task = progress.add_task("  Opening TTE", total=len(gbm_config['detectors']))
+
+    tte_data = []
+    for i, det_config in enumerate(gbm_config['detectors'].values()):
+        tte = update_tte_trigtime(GbmTte.open(tte_files[i]), trigtime.fermi)
+        tte = tte.rebin_energy(rebin_by_edge_index, np.array(det_config['channel_edges']))
+        tte_data.append(tte)
+        progress.update(task, advance=1)
+
+    ttes = DataCollection.from_list(tte_data, names=gbm_config['detector_names'])
+    progress.stop()
+    progress.remove_task(task)
+    return ttes
+
+
+def GetGbmLocalization(search, result, time_ref, include_systematic=True):
+    """Compute GBM location with systematic error modeled as
+    a double Gaussian (core + tail) shape.
+
+    Args:
+        search (TargetedSearch): Search object
+        result (Results): Result object
+        time_ref (Time): Reference time for the tstart value of result
+        include_systematic (bool): Include systematic error when True
+
+    Returns:
+        (GbmHealPix)
+    """
+    # recompute likelihood without sky masking for this timebin
+    search.calculate_likelihood(result['tstart'], result['tstart'] + result['duration'], sky_mask=False)
+
+    # compute sky probability for max template
+    prob = np.exp(search.like.llr - np.max(search.like.llr))[result['template'], :]
+
+    # project to NSIDE 64 healpix
+    proj_prob, _ = grid_to_healpix(
+        prob, search.like_points, search.like_frame, nside_out=64)
+
+    # upscale to NSIDE 128
+    hires_nside = 128
+    hires_npix = hp.nside2npix(hires_nside)
+    theta, phi = hp.pix2ang(hires_nside, np.arange(hires_npix))
+    upscaled_prob = hp.get_interp_val(proj_prob, theta, phi)
+
+    # build GbmHealpix object
+    loc = GbmHealPix.from_data(upscaled_prob, trigtime=time_ref.fermi + result['tstart'],
+                               quaternion=search.like_frame.quaternion, scpos=search.like_frame.obsgeoloc)
+
+    # apply systematic error
+    if include_systematic:
+        systematic = (O3_DGAUSS_Model, result['in_rock'], result['zen'])
+        loc = loc.convolve(*systematic)
+
+    # remove Earth region
+    loc.remove_earth()
+
+    return loc
+
+def main():
+
+    protocols = ['HTTPS', 'FTP']
+
+    parser = argparse.ArgumentParser("gbm_targeted_search.py", "Script for performing the GBM targeted search")
+    parser.add_argument('-t', '--time', default=None, help="Time for continuous data search.")
+    parser.add_argument("--inj-ra", type=float,help="The right ascension of the generated injection in deg")
+    parser.add_argument("--inj-dec", type=float, help="The declination of the generated injection in deg")
+    parser.add_argument('-b', '--burst-number', default=None, help="GBM burst number for on-board trigger search.")
+    parser.add_argument('-f', '--format', type=str, default=None, choices=[None, 'gps', 'fermi', 'datetime'], help="Format of --trigger option.")
+    parser.add_argument('-w', '--search-window-width', default=60, type=float, help="Search window around trigger time in seconds. The search will run from -width/2 until +width/2.")
+    parser.add_argument('--min-dur', default=0.064, type=float, help="Minimum duration of GRB transient in seconds.")
+    parser.add_argument('--max-dur', default=8.192, type=float, help="Maximum duration of GRB transient in seconds.")
+    parser.add_argument('--min-step', default=0.064, type=float, help="Minimum time step size in seconds used to move duration window.")
+    parser.add_argument('--num-steps', default=8, type=int, help="Sets duration window step size using duration/num_steps for steps larger than --min-step.")
+    parser.add_argument('-s', '--skymap', default=None, type=str, help="Optional skymap file.")
+    parser.add_argument('-o', '--results-dir', default='.', type=str, help="Directory for results output.")
+    parser.add_argument('--plots', action=argparse.BooleanOptionalAction)
+    parser.add_argument('--input-file-path', default='.', type=str, help="Path of input files, tte/poshist files.")
+    parser.add_argument('-p', '--protocol', default='HTTPS', type=str, choices=protocols, help="Download Protocol.")
+    parser.add_argument('-x', '--background-window', default=125.0, type=float, help="NaivePossion background window.")
+    parser.add_argument('-y', '--background-poly', default=None, type=int, help="Polynomial background order.")
+    parser.add_argument('-z', '--background-range', default=[-500, 500], nargs="+", type=float, help="Background fit range(s).")
+    parser.add_argument('--flatten', action='store_true', help="Flatten multiorder skymaps.")
+
+    
+    print("\n"  + " ".join(sys.argv) +  "\n")
+
+    args = parser.parse_args()
+
+    progress = Progress(TextColumn("[progress.description]{task.description}"),
+                        TaskProgressColumn(), TimeRemainingColumn(elapsed_when_finished=True))
+
+    # default behavior
+    trigger = args.burst_number
+
+    if args.time is None and args.skymap is None and args.burst_number is None:
+        raise ValueError("User must provide at least --time, --skymap, or --burst-number")
+
+    if args.format is None and args.time is not None:
+        raise ValueError("User must specify time format with --format")
+
+    if args.background_poly is None and len(args.background_range) != 2:
+        raise ValueError("User must provide two values to --background-range for NaivePoisson fit")
+
+    if args.background_poly is not None and len(args.background_range) % 2 != 0:
+        raise ValueError("User must provide an even number of values to --background-range for Polynomial fit")
+
+    if args.skymap:
+        args.skymap = LigoHealPix.open(args.skymap, min_nside=128, flatten=args.flatten, prob_only=False)
+        if args.time is None and args.burst_number is None:
+            args.time = args.skymap.trigtime
+            args.format = 'datetime'
+
+    if args.background_poly:
+        # reformat as separate fit intervals for the background polynomial
+        args.background_range = [
+            (args.background_range[i], args.background_range[i+1]) for i in range(0, len(args.background_range), 2)]
+
+    # apply trigger formatting for Time() object trigger types.
+    # Note: setting --time will over-ride skymap time.
+    if args.time:
+        if args.format == 'datetime':
+            value = datetime.datetime.fromisoformat(args.time)
+        else:
+            value = float(args.time)
+        trigger = Time(value, format=args.format)
+
+    nai_configs = {det.name: {'channel_edges': [0, 8, 20, 33, 51, 85, 106, 127, 128], 'search_channels': [1, 2, 3, 4, 5, 6]} for det in GbmDetectors.nai()}
+    bgo_configs = {det.name: {'channel_edges': [0, 8, 21, 40, 65, 90, 112, 124, 128], 'search_channels': [0, 1, 2, 3, 4, 5, 6, 7]} for det in GbmDetectors.bgo()}
+    gbm_config = InstrumentConfiguration('gbm', nai_configs | bgo_configs)
+
+    search_config = SearchConfiguration(instruments=[gbm_config])
+    search_config.settings.update({
+         'win_width': args.search_window_width,
+         'min_loglr': 5,
+         'min_dur': args.min_dur, 'max_dur': args.max_dur,
+         'min_step': args.min_step,'num_steps': args.num_steps,
+         'bkgd_range': args.background_range, 'bkgd_window': args.background_window,
+         'data_range': np.array([-0.5, 0.5]) * (args.search_window_width + args.max_dur)})
+
+    trigtime, tte_files, poshist_file = GetData(trigger, gbm_config, f"{args.input_file_path}")
+
+    print("Preparing data...")
+
+    if args.inj_files != None:
+        ttes = BuildTteInjList(tte_files, gbm_config, trigtime, args.inj_files, progress)
+    else: 
+        ttes = BuildTteList(tte_files, gbm_config, trigtime, progress)
 
     print("  Opening poshist")
     poshist = GbmPosHist.open(poshist_file)
@@ -419,6 +419,7 @@ def main():
         search.calculate_likelihood(result['tstart'], result['tstart'] + result['duration'])
         result['coinclr'] = calculate_coinclr(search, result, args.skymap)
 
+    os.makedirs(args.results_dir, exist_ok=True)
     results.save(args.results_dir, "full_results.npz")
     filtered_results.save(args.results_dir, "filtered_results.npz")
 
@@ -503,7 +504,8 @@ def main():
             loc.write(args.results_dir, filename=f"Event{i+1}_healpix.fit", overwrite=True)
             skyplot = EquatorialPlot()
             skyplot.add_localization(loc, clevels=[0.90, 0.50], gradient=False)
-            sky_point(args.inj_ra, args.inj_dec, skyplot.ax, frame="equatorial", marker="*", c="r",label="True sky location")
+            if args.inj_files != None:
+                sky_point(inj_files['ra'], inj_files['dec'], skyplot.ax, frame="equatorial", marker="*", c="r",label="True sky location")
             plt.legend()
             plt.savefig(f"Event{i+1}_skymap.png", dpi=300)
             plt.clf()
