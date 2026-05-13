@@ -4,6 +4,7 @@ import argparse
 import subprocess
 import os
 import datetime
+import h5py
 from gdt.missions.fermi.time import Time
 from gdt.missions.fermi.gbm.finders import ContinuousFtp
 import glob
@@ -80,24 +81,19 @@ for i in range(len(det_list)):
     src_sim = TteSourceSimulator(rsp, Band(), band_params, norris, norris_params,deadtime=1e-6)
     sim_check = src_sim.simulate(start, stop)
     if sim_check.time_range is None:
-        np.savez_compressed(f"{args.output}/TEST_TTE_INJECTION_{i}",
-        times = None, channels = None, ebounds = None)
-        print("none")
+        with h5py.File(f"{args.output}/TTE_INJECTION_{i}.hdf5", 'w') as hf:
+            hf.create_dataset("times", data=None)
+            hf.create_dataset("channels", data=None)
+            hf.create_dataset("ebounds", data=None)
+            hf.create_dataset("ra", args.inj_ra)
+            hf.create_dataset("dec", args.inj_dec)
     else:
         gti = Gti.from_bounds([sim_check.time_range[0]], 
                               [sim_check.time_range[1]])
         src_tte = PhotonList.from_data(sim_check,gti=gti)
-        np.savez_compressed(f"{args.output}/TEST_TTE_INJECTION_{i}", 
-        times = src_tte.data.times, channels = src_tte.data.channels, 
-        ebounds = src_tte.data.ebounds._intervals)
-        print("one")
-###separate creation of injection and TS in two different scripts 
-#subprocess.run([
-#    "python3",
-#    "/home/thomas-jacquot/PhD_code/gamma-ray-targeted-search/gbm_targeted_search.py",
-#    "--time", f"{GRB_FERMI_TIME}",
-#    "--format", "fermi",
-#    "--inj-ra", f"{args.inj_ra}",
-#    "--inj-dec", f"{args.inj_dec}",
-#    "-o", f"{args.output}"
-#], check=True)
+        with h5py.File(f"{args.output}/TTE_INJECTION_{i}.hdf5", 'w') as hf:
+            hf.create_dataset("times", data=src_tte.data.times)
+            hf.create_dataset("channels", data=src_tte.data.channels)
+            hf.create_dataset("ebounds", data=src_tte.data.ebounds_intervals)
+            hf.create_dataset("ra", args.inj_ra)
+            hf.create_dataset("dec", args.inj_dec)

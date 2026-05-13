@@ -118,54 +118,54 @@ def BuildTteInjList(tte_files, gbm_config, trigtime, inj_files, progress):
     det_list = np.array(["n0", "n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8", "n9", "na", "nb", "b0", "b1"])
     for i, det_config in enumerate(gbm_config['detectors'].values()):
         tte = update_tte_trigtime(GbmTte.open(tte_files[i]), trigtime.fermi)
-        sim_file = np.load(f"{args.results_dir}/TEST_TTE_INJECTION_{i}.npz", allow_pickle=True)
-        if sim_file['times'].all() != None  :
-            mask = np.append(mask, True)
-            emin = [sim_file["ebounds"][i].emin for i in range(len(sim_file["ebounds"]))]
-            emax = [sim_file["ebounds"][i].emax for i in range(len(sim_file["ebounds"]))]
-            ebounds = Ebounds.from_bounds(emin, emax)
-            events = EventList(times=sim_file['times'], channels=sim_file['channels'], ebounds = ebounds)
-            #breakpoint()
-            #sim = simulateTTE(tte.ebounds, i+2, chanlo, chanhi, trigtime.fermi, trigtime.fermi+20)
-            sim = PhotonList.from_data(
-                events,
-                gti=Gti.from_bounds([events.time_range[0]], [events.time_range[1]])
-            )
-            updated_sim = update_tte_trigtime(sim, trigtime.fermi)
-            print("Merging")
-            tte_sim = PhotonList.merge([tte, updated_sim])
-            print("Merged")
-            tte_sim_data_128.append(tte_sim)
-            sim_list_128.append(updated_sim)
-            tte_data_128.append(tte)
-            tte_sim = tte_sim.rebin_energy(rebin_by_edge_index, np.array(det_config['channel_edges']))
-            updated_sim = updated_sim.rebin_energy(rebin_by_edge_index, np.array(det_config['channel_edges']))
-            tte = tte.rebin_energy(rebin_by_edge_index, np.array(det_config['channel_edges']))
-            tte_sim_data.append(tte_sim)
-            sim_list.append(updated_sim)
-            tte_data.append(tte)
-        
-        else:
-            tte = tte.rebin_energy(rebin_by_edge_index, np.array(det_config['channel_edges']))
-            tte_sim_data.append(tte)
-            mask = np.append(mask, False)
+        with h5py.File(f"{inj_files}/TTE_INJECTION_{i}.hdf5", 'r') as sim_file:
+            if sim_file['times'].all() != None  :
+                mask = np.append(mask, True)
+                emin = [sim_file["ebounds"][i].emin for i in range(len(sim_file["ebounds"]))]
+                emax = [sim_file["ebounds"][i].emax for i in range(len(sim_file["ebounds"]))]
+                ebounds = Ebounds.from_bounds(emin, emax)
+                events = EventList(times=sim_file['times'], channels=sim_file['channels'], ebounds = ebounds)
+                #breakpoint()
+                #sim = simulateTTE(tte.ebounds, i+2, chanlo, chanhi, trigtime.fermi, trigtime.fermi+20)
+                sim = PhotonList.from_data(
+                    events,
+                    gti=Gti.from_bounds([events.time_range[0]], [events.time_range[1]])
+                )
+                updated_sim = update_tte_trigtime(sim, trigtime.fermi)
+                print("Merging")
+                tte_sim = PhotonList.merge([tte, updated_sim])
+                print("Merged")
+                tte_sim_data_128.append(tte_sim)
+                sim_list_128.append(updated_sim)
+                tte_data_128.append(tte)
+                tte_sim = tte_sim.rebin_energy(rebin_by_edge_index, np.array(det_config['channel_edges']))
+                updated_sim = updated_sim.rebin_energy(rebin_by_edge_index, np.array(det_config['channel_edges']))
+                tte = tte.rebin_energy(rebin_by_edge_index, np.array(det_config['channel_edges']))
+                tte_sim_data.append(tte_sim)
+                sim_list.append(updated_sim)
+                tte_data.append(tte)
+
+            else:
+                tte = tte.rebin_energy(rebin_by_edge_index, np.array(det_config['channel_edges']))
+                tte_sim_data.append(tte)
+                mask = np.append(mask, False)
         progress.update(task, advance=1)
 
-    with h5py.File(f"{args.results_dir}/tte_sim_data.hdf5","w") as hf:
+    with h5py.File(f"{inj_files}/tte_sim_data.hdf5","w") as hf:
         for i in range(len(det_list)):
             print(tte_sim_data_128[i].data.times)
             hf[f'{det_list[i]}/times'] = tte_sim_data_128[i].data.times
             hf[f'{det_list[i]}/channels'] = tte_sim_data_128[i].data.channels
             hf[f'{det_list[i]}/ebounds'] = tte_sim_data_128[i].data.ebounds.as_list()
 
-    with h5py.File(f"{args.results_dir}/tte_data.hdf5","w") as hf:
+    with h5py.File(f"{inj_files}/tte_data.hdf5","w") as hf:
         for i in range(len(det_list)):
             print(tte_data_128[i].data.times)
             hf[f'{det_list[i]}/times'] = tte_data_128[i].data.times
             hf[f'{det_list[i]}/channels'] = tte_data_128[i].data.channels
             hf[f'{det_list[i]}/ebounds'] = tte_data_128[i].data.ebounds.as_list()
 
-    with h5py.File(f"{args.results_dir}/sim_data.hdf5","w") as hf:
+    with h5py.File(f"{inj_files}/sim_data.hdf5","w") as hf:
         hf['flag'] = mask
         mask = mask.astype(bool)
         for i in range(len(det_list)):
@@ -245,8 +245,7 @@ def main():
 
     parser = argparse.ArgumentParser("gbm_targeted_search.py", "Script for performing the GBM targeted search")
     parser.add_argument('-t', '--time', default=None, help="Time for continuous data search.")
-    parser.add_argument("--inj-ra", type=float,help="The right ascension of the generated injection in deg")
-    parser.add_argument("--inj-dec", type=float, help="The declination of the generated injection in deg")
+    parser.add_argument("--inj-files", type=str, default=None, help="File path for injections")
     parser.add_argument('-b', '--burst-number', default=None, help="GBM burst number for on-board trigger search.")
     parser.add_argument('-f', '--format', type=str, default=None, choices=[None, 'gps', 'fermi', 'datetime'], help="Format of --trigger option.")
     parser.add_argument('-w', '--search-window-width', default=60, type=float, help="Search window around trigger time in seconds. The search will run from -width/2 until +width/2.")
@@ -323,8 +322,9 @@ def main():
     trigtime, tte_files, poshist_file = GetData(trigger, gbm_config, f"{args.input_file_path}")
 
     print("Preparing data...")
+    
 
-    if args.inj_files != None:
+    if args.inj_files != "None":
         ttes = BuildTteInjList(tte_files, gbm_config, trigtime, args.inj_files, progress)
     else: 
         ttes = BuildTteList(tte_files, gbm_config, trigtime, progress)
@@ -504,7 +504,8 @@ def main():
             loc.write(args.results_dir, filename=f"Event{i+1}_healpix.fit", overwrite=True)
             skyplot = EquatorialPlot()
             skyplot.add_localization(loc, clevels=[0.90, 0.50], gradient=False)
-            if args.inj_files != None:
+            ### FIX ME:  Read properly hdf5 injection file to keep ra and dec variables 
+            if args.inj_files != "None":
                 sky_point(inj_files['ra'], inj_files['dec'], skyplot.ax, frame="equatorial", marker="*", c="r",label="True sky location")
             plt.legend()
             plt.savefig(f"Event{i+1}_skymap.png", dpi=300)
