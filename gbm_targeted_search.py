@@ -91,8 +91,8 @@ def GetData(trigger_id, settings, data_directory):
                                       list of TTE file paths, and position history path
     """
     path = f"{data_directory}"
-    tte_wildcard = f"{path}/*tte_??_*.fit*"
-    poshist_wildcard = f"{path}/../glg_poshist_all_*.fit"
+    tte_wildcard = f"{path}/tte/*tte_??_*.fit*"
+    poshist_wildcard = f"{path}/poshist_cpsec/glg_poshist_all_*.fit"
 
     # check for files
     tte_files = []
