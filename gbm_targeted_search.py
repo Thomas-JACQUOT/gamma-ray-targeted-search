@@ -324,7 +324,7 @@ def main():
     print("Preparing data...")
     
 
-    if args.inj_files != "None":
+    if args.inj_files != None:
         ttes = BuildTteInjList(tte_files, gbm_config, trigtime, args.inj_files, progress)
     else: 
         ttes = BuildTteList(tte_files, gbm_config, trigtime, progress)
