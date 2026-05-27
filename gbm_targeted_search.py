@@ -90,8 +90,16 @@ def GetData(trigger_id, settings, data_directory):
         (Time, [str, str, ...], str): tuple with Time() formatted trigger time, 
                                       list of TTE file paths, and position history path
     """
+    if trigger_id.format == "fermi":
+        hour = trigger_id.datetime.hour
+    else:
+        hour = trigger_id.hour
+
     path = f"{data_directory}"
-    tte_wildcard = f"{path}/tte/*tte_??_*.fit*"
+    if hour < 10:
+        tte_wildcard = f"{path}/tte/*tte_??_0{hour}.fit*"
+    else:
+        tte_wildcard = f"{path}/tte/*tte_??_{hour}*.fit*"
     poshist_wildcard = f"{path}/poshist_cspec/glg_poshist_all_*.fit"
 
     # check for files
@@ -99,11 +107,11 @@ def GetData(trigger_id, settings, data_directory):
     for det in settings['detectors']:
         tte_files.extend(glob.glob(tte_wildcard.replace("??", det)))
     poshist_files = sorted(glob.glob(poshist_wildcard))
-    trigtime = trigger_id # trigger_id is already a Time() object for continuous case
+    
 
     # only return first poshist for now.
     # Need to work on crossover at day boundary.
-    return trigtime, tte_files, poshist_files[0]
+    return trigger_id, tte_files, poshist_files[0]
 
 def BuildTteInjList(tte_files, gbm_config, trigtime, inj_files, progress):
     progress.start()
