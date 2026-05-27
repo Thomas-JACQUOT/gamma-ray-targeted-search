@@ -97,9 +97,9 @@ def GetData(trigger_id, settings, data_directory):
 
     path = f"{data_directory}"
     if hour < 10:
-        tte_wildcard = f"{path}/tte/*tte_??_0{hour}.fit*"
+        tte_wildcard = f"{path}/tte/*tte_??_0{hour}z.fit*"
     else:
-        tte_wildcard = f"{path}/tte/*tte_??_{hour}*.fit*"
+        tte_wildcard = f"{path}/tte/*tte_??_{hour}z.fit*"
     poshist_wildcard = f"{path}/poshist_cspec/glg_poshist_all_*.fit"
 
     # check for files
