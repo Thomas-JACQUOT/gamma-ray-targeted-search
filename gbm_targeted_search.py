@@ -96,7 +96,7 @@ def GetData(trigger_id, settings, data_directory):
         hour = trigger_id.hour
 
     path = f"{data_directory}"
-    tte_wildcard = f"{path}/tte/*tte_??_*{hour}z.fit*"
+    tte_wildcard = f"{path}/tte/*tte_??_*{hour}z*.fit*"
     poshist_wildcard = f"{path}/poshist_cspec/glg_poshist_all_*.fit"
 
     # check for files
