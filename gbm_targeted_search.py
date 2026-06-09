@@ -1,4 +1,4 @@
-#!/home/thomas-jacquot/.conda/envs/up2dategts/bin/python3
+#!/opt/up2dategts/bin/python3
 # Copyright 2017-2022 by Universities Space Research Association (USRA). All rights reserved.
 #
 # Developed by: William Cleveland and Adam Goldstein
