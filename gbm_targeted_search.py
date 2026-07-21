@@ -126,8 +126,8 @@ def BuildTteInjList(tte_files, gbm_config, trigtime, inj_files, progress):
         with h5py.File(f"{inj_files}/TTE_INJECTION_{i}.hdf5", 'r') as sim_file:
             if sim_file['times'].all() != None  :
                 mask = np.append(mask, True)
-                emin = [sim_file["ebounds"][i].emin for i in range(len(sim_file["ebounds"]))]
-                emax = [sim_file["ebounds"][i].emax for i in range(len(sim_file["ebounds"]))]
+                emin = sim_file["ebounds"][:,0]
+                emax = sim_file["ebounds"][:,1]
                 ebounds = Ebounds.from_bounds(emin, emax)
                 events = EventList(times=sim_file['times'], channels=sim_file['channels'], ebounds = ebounds)
                 #breakpoint()

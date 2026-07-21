@@ -94,6 +94,6 @@ for i in range(len(det_list)):
         with h5py.File(f"{args.output}/TTE_INJECTION_{i}.hdf5", 'w') as hf:
             hf.create_dataset("times", data=src_tte.data.times)
             hf.create_dataset("channels", data=src_tte.data.channels)
-            hf.create_dataset("ebounds", data=src_tte.data.ebounds._intervals)
+            hf.create_dataset("ebounds", data=src_tte.data.ebounds.as_list())
             hf.create_dataset("ra", args.inj_ra)
             hf.create_dataset("dec", args.inj_dec)
